@@ -1,0 +1,466 @@
+Intro & Deep dive
+Volcano: A Cloud Native Batch System
+Cloud Native for Intelligent Workload
+
+
+    More and more organization are leveraging cloud native technology to avoid
+    fragmental ecosystem, isolated stack, low resource utilization.
+
+
+
+HPC            HPC        BigData      HPC      BigData       AI                     Cloud Native Batch System
+                                                                                                (HPC/BigData/AI)
+
+
+
+
+• LSF                                            • Spark                                 • CERN@GKE                  • IDC: 云原生AI
+• PBS      • Hadoop 1.0                          • Storm                • Spark on k8s   • kbatch@GKE                • EMR@EKS
+                          • Slurm   • SGE/UGE              • kubeflow                                   • Gene@GKE   • K8s Batch WG
+• SGE      • HDFS                                • Flink                • Kube-batch     • Volcano
+
+
+199*        2006           2010        2013       2014        2016          2017            2019           2020         2021
+Title
+
+  
+  
+  
+
+
+  
+  
+
+
+  
+  
+
+
+  
+  
+
+
+  
+Volcano Overview
+
+
+                              Volcano Federation
+
+
+  Kubernetes                       Kubernetes                      Kubernetes
+                                                                                      •   Created at March 2019; Sandbox
+                                                                                          at April 2020; Incubator at April
+Volcano-Controller              Volcano-Controller    ……         Volcano-Controller
+                                                                                          2022
+Volcano-Scheduler               Volcano-Scheduler                Volcano-Scheduler
+                                                                                      •   2.3k star，350+ contributors，
+                                                                                          latest version v1.5.1
+                                                                                      •   50+ enterprises adopt Volcano in
+                       Volcano controller             Volcano scheduler                   production environments.
+     vsub
+                     Job   Queue
+                                          Kube-apiserver
+   kubectl            JobFlow
+
+
+
+
+                             NUMA                    NUMA            ……
+                     Node                     Node
+                                GPU                  GPU
+•
+•
+
+
+
+
+•
+•
+
+
+
+
+•
+•
+•
+Title
+        apiVersion: batch.volcano.sh/v1alpha1
+        kind: Job
+        metadata:
+•         name: mpi-job
+          labels:
+            "volcano.sh/job-type": "MPI"
+        spec:
+•         # minimum number of pods need to be started
+          minAvailable: 3
+•         schedulerName: volcano
+          plugins:
+    •       # job level ssh trust
+            ssh: []
+    •       # define network relevant info for running,
+            # hosts, headless services etc.
+    •       svc: []
+          # restart who job if any pod get evicted
+    •     policies:
+            - event: PodEvicted
+•             action: RestartJob
+          tasks:
+•           - replicas: 1
+              name: mpimaster
+              # Mark whole job completed when mpiexec completed
+              policies:
+                 - event: TaskCompleted
+                   action: CompleteJob
+•
+•
+•
+
+
+
+
+    Queue1
+
+    Queue2
+
+    QueueN
+                                                                                      guarantee
+
+
+•                                                                                                                 ……                 Queue
+•
+                                                                                                       capacity
+
+
+
+
+        Queuer1 with                           Queuer2 with                            Queuer1 with               Queuer2 with
+        weight=2                               weight=1                                weight=2                   weight=1
+
+
+
+
+                       Cluster                                                              Cluster
+                       resources                              Submit job to Queue 2
+                                                                                            resourc
+                                                                                            es
+                         CPU       CPU   CPU                                                    CPU   CPU           CPU
+
+
+                         CPU       CPU   CPU                                                    CPU   CPU           CPU
+
+
+
+
+    Queue2 is empty. Q1 can borrow resources from Queue2.                       Queue2 has workload, it will reclaim resources from Queue1.
+Title
+•
+•
+•
+
+
+
+                             Fair-share between job
+    Namespace 1
+                                                                                                                      node 1
+       user1
+                                                                       Queue1
+
+       user2                                   big job-2
+                          small job-1                                  weight:1
+                                                                                                                      node 2
+
+
+    Namespace 2             Fair-share between namespace
+
+       user3      Job-3                                                                                               node 3
+
+                                        ns2                                                      ns3      Queue2
+
+    Namespace 3   Job-4
+                                                                                                         weight:2
+                  Job-5    Job-3                 Job-4         Job-5
+       user4
+                                                                                  Running task         Pending task
+
+
+       user                                                Scheduler                                                    Nodes
+•
+•
+
+
+
+
+    •
+
+    •
+
+
+    •
+
+
+
+        ：
+    •
+
+    •
+
+    •
+•
+    •
+•
+    •
+•
+    •
+•
+    •
+•
+    •
+•
+    •
+•
+    •
+•
+    •
+•
+    •
+•
+    •
+•
+Title
+•
+
+    apiVersion: batch.volcano.sh/v1alpha1
+    kind: Job
+    metadata:
+     name: test-job
+    spec:                                            •
+     minAvailable: 5 #min
+     tasks:
+       - replicas: 10 #max
+         template:                                   •
+          spec:
+           containers:
+            - image: train_script
+               resources:
+                 nvidia.com/gpu: 1                                  Queue
+    ……
+
+                                                     [min:5]           [min:5, max: 10]         [5:10]   [5:10]
+                                                                       Elastic training job-1
+                                                  Inference job-2
+                                                                                                job-1    job-2
+
+
+         minAvailable pod           elastic pod
+Title
+•                                   •
+
+
+
+
+        PS
+                      worker
+
+
+
+                volcano
+
+
+
+        PS                     PS
+
+
+
+
+         Task-topology scheduling
+Title
+                                                                                         •
+•
+
+                                                                                         •
+
+
+
+
+                      Big job1
+                      Minvailable: 4
+
+                                                                                             apiVersion: batch.volcano.sh/v1alpha1
+       Small job2
+                                                                                             kind: Job
+                                                                                             metadata:
+                                          Small job3                                          name: test-job
+                                                                                              annotations:
+                                                                                                 sla-waiting-time:1h
+                                                                   Small job4                spec:
+    T1                                 T2                       T3                            minAvailable: 5
+    Submit big job job1                Small job2 get running   Small job3 get running        tasks:
+    Submit small job2                  Submit small job3        Submit small job4               - replicas: 5
+                                                                                                   template:
+                                                                                              ……
+                                                          Pod Group                             Queue
+
+
+
+
+                                                      - Schedule based on Pod Group             - Introduce Queue
+                                                      - Minimal Resource reservation（CPU/MEM）   - Multi-tenants
+                                                      - Job priority                            - Priority
+                                                                                                - Fair-share
+                                                                                                - Preempt
+                                                                                                - ……
+
+
+
+
+SPARK-36057: Support volcano/alternative schedulers
+                                                                                                          ：
+       AI Task           Transcoding         BigData Task          MicroService
+                                                                                          •                       ，
+
+                                                                                          •
+
+                                       Volcano
+                                                                                          •               ，
+
+                                       K8s API Server
+       Node1                                                          Node2
+
+
+ Transcoding、AI                                                    BigData、AI、Web         •           ：
+                                                                                              •
+                                                                                              •
+                                       OBS
+                                                                                              •
+                                                                                          •       ：           ，
+Web              tfjob                                      Spark        tfjob      Web
+                                 SFS Turbo Cache
+                                                                                          •           ：
+ ENI               ENI                                       ENI         ENI      ENI
+Title
+                                                                                                  •       ，
+                 Infra service                                   Image repo
+               ECS/VPC/OBS/…                                    (cache mirror)
+                                                                                                  •
+                                                                                                  •
+master
+                  1                                              Controllers
+
+            Kube APIServers                       Pods Controllers           Kind Controllers
+
+                                                  Nodes Controllers                 …
+                                                                                                      ：
+                                                                                                  •           ，
+  etcd1集群       etcd2集群         …                              Multi-Schedulers
+                                                                                    Kube-
+                                                    Volcano     2                 Scheduler       •
+                                                                                                  •
+    Pods          Nodes       Other OBJ
+
+
+
+
+1W nodes
+                                                                                              4
+    Pod        P2P                         P2P                         Pod           P2P
+              Agent
+                               Pod        Agent                                     Agent         •
+     Scaled node                 Scaled node
+                                                       ….                    Node                 •
+
+                                     3                                Cloud network
+                                                                                                  •
+
+
+
+
+                                                                                                  •
+                                                                                                  •
+Title
+                        recommend
+                           service                           model                •
+
+                                                                                  •
+                                  release
+
+   online     characteristic
+
+
+
+
+                                                                  model release
+   service       cache                      model training
+
+                           Flink training
+                                data                                              •
+                             generator
+                                                                                  •
+    label
+  computing                                                                       •
+                                            training data
+                                                                                  •
+
+
+
+                                             model training based on              •
+                                                     Volcano                      •
+
+
+                                                                                  •
+                                                                                  •
+                                                                                  •
+                                                                                          ：
+                                                                       •
+                                                                       •
+                                                                       •
+
+                                                                                      ：
+                                                                       •
+                                                                       •
+                                                                       •
+
+                                                                                  ：
+                                                                       •
+                                                                       •
+                                                                       •
+
+
+
+
+Ref: https://www.cncf.io/blog/2021/03/26/how-ruitian-used-volcano-to-run-large-scale-offline-hpc-jobs/
+                                                              •
+                                                                  •
+                                                                  •
+                                                                  •
+v1.0:                         •                               •
+ •                            •                               •
+ •                                                            •
+                              •                                   •
+ •                            •                                   •
+ •                                                                •
+ •                            •                               •
+ •                            •                                   •
+                     2021.9                         2022.Q2       •
+
+
+
+        2020.7                    2022.Q1                             202x.x
+                 •                          •
+                                                •
+                 •                          •
+                                                •
+                 •                          •
+                                            •
+                 •                          •
+                                            •
+• Website: https://volcano.sh/en/
+
+• Github: https://github.com/volcano-sh
+
+• Slack channel: https://volcano-sh.slack.com
+
+
+
+
+Join our community and give us feedback!
+

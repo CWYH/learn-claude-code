@@ -1,0 +1,562 @@
+PAGES 24
+METADATA {'format': 'PDF 1.5', 'title': 'PowerPoint Presentation', 'author': 'Alex Contini', 'subject': '', 'keywords': '', 'creator': 'Microsoft® PowerPoint® 2013', 'producer': 'Microsoft® PowerPoint® 2013', 'creationDate': "D:20220506100550+08'00'", 'modDate': "D:20220506100550+08'00'", 'trapped': '', 'encryption': None}
+--- PAGE 1 ---
+WELCOME TO VALENCIA
+
+--- PAGE 2 ---
+Intro & Deep dive
+Volcano: A Cloud Native Batch SystemKlaus Ma (@k82cn)
+
+--- PAGE 3 ---
+Cloud Native for Intelligent Workload
+Cloud Native Batch System
+(HPC/BigData/AI)
+AI
+BigData
+HPC
+BigData
+HPC
+HPC
+2013
+• SGE/UGE
+• Hadoop 1.0
+• HDFS
+2006
+2017
+• Spark on k8s
+• Kube-batch
+2014
+• Spark
+• Storm
+• Flink
+199*
+• LSF
+• PBS
+• SGE
+More and more organization are leveraging cloud native technology to avoid 
+fragmental ecosystem, isolated stack, low resource utilization.
+2016
+• kubeflow
+• Slurm
+2010
+2020
+• Gene@GKE
+• IDC: 云原生AI
+• EMR@EKS
+• K8s Batch WG
+2021
+2019
+• CERN@GKE
+• kbatch@GKE
+• Volcano
+
+--- PAGE 4 ---
+TitleBatch on K8s: ChallengesJob management 
+Pod level scheduling,  no awareness of upper-level applications.
+Lack of fine-grained lifecycle management.
+Lack of task dependencies, job dependencies.Scheduling
+Lack of job based scheduling, e.g. job ordering, job priority, job preemption, job fair-share, job reservation.
+Not enough advanced scheduling algorithms, E.g. CPU topology, task-topology, IO-Awareness, backfill.Multi-framewo
+Insufficient support for mainstream computing frameworks like MPI, Tensorflow, Mxnet, Pytorch.
+Complex deployment and O&M because each framework corresponding to a different operator.Resource planning, shari
+Lack of support to resource sharing mechanism between jobs, queues, namespaces.
+Lack of Deeper support on heterogeneous resources.Performance
+Not enough throughput, roundtrip for batch workload.
+
+--- PAGE 5 ---
+Kubernetes
+•
+Created at March 2019; Sandbox 
+at April 2020; Incubator at April 
+2022
+•
+2.3k star，350+ contributors，
+latest version v1.5.1
+•
+50+ enterprises adopt Volcano in 
+production environments.
+Volcano Federation
+Volcano-Controller
+Volcano-Scheduler
+Kubernetes
+Volcano-Controller
+Volcano-Scheduler
+Kubernetes
+Volcano-Controller
+Volcano-Scheduler
+……
+Volcano Overview
+Volcano scheduler
+Volcano controller
+Job
+JobFlow
+Queue
+Node
+……
+Kube-apiserver
+NUMA
+GPU
+Node
+NUMA
+GPU
+vsub
+kubectl
+
+--- PAGE 6 ---
+Key ConceptJob 
+•Multiple Pod Template
+•Lifecycle management/Error handingUser/namespace/resource quota
+•namespace is regarded as user
+•resource quota is regarded as the upper limit resource that users in the namespace are able to use at most. Like the QPS in Kube-ap
+•Use Queue for resource sharing.
+•Share resources between different "tenants" or resource pools.
+•Support different scheduling policies or algorithms for different "tenants" or resource pools.
+
+--- PAGE 7 ---
+TitleJob managementVolcano Job:
+•Unified Job interface for most of batch job like mpi, pytorch, tensorflow, mxnet, etc.
+•Fine-grained Job Lifecycle management
+•Extendable job plugin
+•Env
+•Svc
+•Ssh
+•Tensorflow
+•Coordinate with Scheduler 
+•Job dependency
+apiVersion: batch.volcano.sh/v1alpha1
+kind: Job
+metadata:
+name: mpi-job
+labels:
+"volcano.sh/job-type": "MPI"
+spec:
+# minimum number of pods need to be started
+minAvailable: 3
+schedulerName: volcano
+plugins:
+# job level ssh trust
+ssh: []
+# define network relevant info for running,
+# hosts, headless services etc.
+svc: []
+# restart who job if any pod get evicted
+policies:
+- event: PodEvicted
+action: RestartJob
+tasks:
+- replicas: 1
+name: mpimaster
+# Mark whole job completed when mpiexec completed
+policies:
+- event: TaskCompleted
+action: CompleteJob
+
+--- PAGE 8 ---
+Resource management-Queue
+•Queue is cluster scoped, decoupled with user/namespace.
+•Queue is used to share resources between “multi-tenants” or resource pool.
+•Configure policy for each queue, e.g. FIFO, fair share, priority, SLA.K8S CLUSTERSubmit jobnodesResourcesnodesResourcesQueues
+Queue1
+Queue2
+QueueN
+
+--- PAGE 9 ---
+Dynamic resource sharing between queues
+•Queue Guarantee/Capacity
+•Share resource between Queues proportionally by weight
+Cluster 
+resources
+Queuer1 with 
+weight=2
+Cluster 
+resourc
+es
+Queuer1 with 
+weight=2
+Queuer2 with 
+weight=1
+Submit job to Queue 2
+Queuer2 with 
+weight=1
+CPU
+CPU
+CPU
+CPU
+CPU
+CPU
+CPU
+CPU
+CPU
+CPU
+CPU
+CPU
+Queue2 is empty. Q1 can borrow resources from Queue2.
+Queue2 has workload, it will reclaim resources from Queue1.
+capacity
+Queue
+guarantee
+……
+
+--- PAGE 10 ---
+TitleFair share within Queue
+•Sharing resource between jobs
+•Sharing resource between namespaces
+•Per-Queue policy (FIFO, Priority, Fair share , …)
+Namespace 1
+weight:1
+user1
+user2
+Namespace 2
+user3
+user4
+small job-1
+Namespace 3
+Fair-share between job
+ns2
+ns3
+Fair-share between namespace
+big job-2
+Job-3
+Job-4
+Job-5
+Queue1
+Queue2
+weight:2
+Running task
+Pending task
+Nodes
+node 1
+node 2
+node 3
+Scheduler
+user
+Job-3
+Job-4
+Job-5
+
+--- PAGE 11 ---
+Case: hierarchical queue
+•How to share resource in a multi-level org more easily?
+•Problem: flat queue can not meet complex resource share and isolation easily for big org CompanyGPU 10000SupportMin:CPU3000Max:CPU3000E
+•Multiple level queue constructs a tree which is mapped to the org
+•Each level queue has min, max, weight.Use max to isolate resour
+•Share resources between queues and reclaim by weightBenefit
+：
+•Flexible resource management, easy to map the organization
+•fine-grained control resource share and isolation for a big multi
+•The queue min capacity ensures guaranteed resource, the proport
+
+--- PAGE 12 ---
+Scheduling policy in Volcano
+•Gang-Scheduling
+•Job priority
+•Job queue
+•Job order
+•Preemption
+•backfill
+•Job Fair-share
+•Namespace fair-share
+•Task-topology
+•IO-Awareness
+•Resource reservation
+•SLA
+•GPU sharing
+•NUMA-Awareness
+•HDRF
+•Hierarchy Queue
+•Co-location
+•Elastic scheduling
+•TDM
+•Proportional scheduling 
+•……
+
+--- PAGE 13 ---
+TitleScenario: Elastic scheduling
+minAvailable pod
+elastic pod
+apiVersion: batch.volcano.sh/v1alpha1
+kind: Job
+metadata:
+name: test-job
+spec:
+minAvailable: 5 #min
+tasks:
+- replicas: 10  #max
+template:
+spec:
+containers:
+- image: train_script
+resources:
+nvidia.com/gpu: 1
+… …
+[min:5, max: 10]
+Elastic training job-1
+Inference job-2
+[min:5]
+Queue
+[5:10]
+[5:10]
+job-1
+job-2Example: 
+•inference job-2 (high priority) preempt elastic pod from training job-1 w
+•The elastic training job-1 get more Pod scheduled when there is free res
+•Whatis elastic jobQiankunlli(githubid) from XimalayaCompany ontributedthis feature.
+
+--- PAGE 14 ---
+TitleScenario: Topology awareness
+•The execution time of 3 jobs in total; 2ps + 4workers for each job in k8s
+volcano
+PS
+worker
+PS
+PS
+•IO-Awareness: minimized the maximum of communication
+Task-topology schedulingworkerworkerworkerworker
+
+--- PAGE 15 ---
+TitleScenario: SLA scheduling
+•SLA scheduling allow to configure the job so that it is completed on time and 
+apiVersion: batch.volcano.sh/v1alpha1
+kind: Job
+metadata:
+name: test-job
+annotations:
+sla-waiting-time:1h
+spec:
+minAvailable: 5
+tasks:
+- replicas: 5
+template:
+… …
+•SLA support argument `sla-waiting-time` to realize job resource reservation: `
+T1 
+Submit big job job1
+Submit small job2
+T2
+Small job2 get running
+Submit small job3
+Big job1
+Minvailable: 4
+Small job2
+T3
+Small job3 get running
+Submit small job4
+•Scenario: Big job get starving while co-existing with small job.
+Small job3
+Small job4
+
+--- PAGE 16 ---
+Scenario: CPU Topology awarenessNumaAwareVolcano watch CPU topology and schedule pods to the nod
+
+--- PAGE 17 ---
+Scenario: batch scheduler for Spark
+SPARK-36057: Support volcano/alternative schedulers
+Pod Group
+Queue
+- Schedule based on Pod Group
+- Minimal Resource reservation（CPU/MEM）
+- Job priority
+- Introduce Queue
+- Multi-tenants
+- Priority
+- Fair-share
+- Preempt
+- ……More k8s native resource supp
+
+--- PAGE 18 ---
+Scenario: Co-location and oversubscription
+Node1
+Node2
+BigData、AI、Web
+Transcoding、AI
+K8s  API Server
+Transcoding
+Web
+tfjob
+Spark
+OBS
+SFS Turbo Cache
+ENI
+ENI
+ENI
+AI Task
+BigData Task
+Volcano
+Web
+tfjob
+ENI
+ENI
+MicroServiceScenarioandrequirement
+：
+•There is peak and valley for online service ，request is set  based on the 
+•Some users do not know the resource usage of their service, request for
+•High allocation rate, low usage ，CPU average utilization less than15%
+•qos-feature：QossupportinOSlevel
+•qos/CPUfast preemtion
+•QosMemory reclaim with priority
+•qos/NET&IOmonitor and isolocation
+•kubelet ：Update/Change Qosmodel
+，support resource report realti
+•scheduler ：Support multiple types of workload together.
+
+--- PAGE 19 ---
+TitleScenario: Big scale cluster: 10k nodes, 1 million Pod
+Infra service
+ECS/VPC/OBS/…
+Image repo
+(cache mirror)
+master
+Multi-Schedulers
+Kube APIServers
+Volcano
+Controllers
+1
+etcd1集群
+…
+Pods
+etcd2集群
+Nodes
+Other OBJ
+Nodes Controllers
+Pods Controllers
+Kube-
+Scheduler
+Kind Controllers
+…
+3
+2
+1W nodes
+Node
+Scaled node
+P2P
+Agent
+….
+Cloud network
+Pod
+Scaled node
+P2P
+Agent
+Pod
+P2P
+Agent
+Pod
+4Container ochistration:
+•Dedicated ETCD, e.g. Event stored on separated DB ，wal/snapshot mounte
+•multiple controller-manager instances
+•Kube-apiserverscaling based on bizScheduler
+：
+•improve throughput of single instance by EquivalenceCache，pruningalgorith
+•Support 1.5k pod/s throughput
+•multiple instances based on shared resource view.Network:
+•increase density of container in each node and ENI capacity.
+•improve dispatching efficiency of network interface by pre-apply for network 
+•support big scale app based on eBPF/XDP, e.g. network policyContainer
+•optimization for containerdstartup 
+•Lazy loading
+
+--- PAGE 20 ---
+TitleUse Case: AI platform at XiaohongshuAbout Xiaohongshu
+•Top social media and e-commerce platform with over 100 million active u
+•Recommendation is one of core business. AI platform at Xiaohongshuconsi
+•Training cluster with thousands of nodes
+•Recommendation model with nearly 100 billion parameters 
+•A single training task contains hundreds of PS and workers
+•Require best topology scheduling and performanceSolution
+•Adoption of binpackand task-topology scheduling policy
+•Adoption of gang-scheduling/SLABenefit
+•20% increase on AI training speed overall
+•20% increase on AI training throughput
+•Starvation prevention on big jobs
+online
+service
+label
+computing
+model training
+model
+model release
+recommend 
+service
+Flink training 
+data 
+generator
+characteristic
+cache
+training data
+model training based on 
+Volcano
+releaseBased on these pain points, we did some research and found Volcano, which can completely solve our pain po
+
+--- PAGE 21 ---
+Use Case: Batch at RuiTianinvestmentBackground
+：
+•Top financial investment company in China
+•AI training and reasoning
+•Big data ELT & batch offline tasksScenarios
+：
+•Fair scheduling for resource sharing among multiple teams
+•gang-scheduling to avoid dead lock
+•support mixed scheduling for AI, Big data, batch tasksBenefit
+：
+•Volcano for all business online
+•Queue and Fair scheduling policies satisfy all requirements
+•More than 300k pods scheduled per day in production“Volcano is based on K
+Ref: https://www.cncf.io/blog/2021/03/26/how-ruitian-used-volcano-to-run-large-scale-offline-hpc-jobs/
+
+--- PAGE 22 ---
+CommunityData from https://volcano.devstats.cncf.ioVolcano code diversity in recent 1-year
+
+--- PAGE 23 ---
+ReleaseVolcano: A KubernetesNative Batch System
+v1.0:
+•GPU Sharing
+•Preempt And Reclaim Upgrade to Beta
+•Job Dynamic Scale Up And Down
+•Integrate With Flink-Operator
+•Support DAG Job Based On Argo
+•……v1.4:
+•Support Multiple Volcano Scheduler
+•Support CPU NUMA-Aware Scheduling
+•Support Proportion Of Resource For GPU Node
+•…...
+2021.9v1.5:
+•Reserve Resource for Queue
+•Support spark Native As Custom Scheduler
+•Support Task Dependency
+•Support Specified Nodes for Volcano in Cluster
+•Add TensorflowJob Plugin
+•…...
+2022.Q1v1.6:
+•Inference
+•GPU virtualization
+•Training
+•Elastic scheduling
+•Support Job DAG/Flow
+•Add MPI job plugin
+•Stability Enhancement
+•……
+2022.Q2v1.x:
+•Resource management
+•Plugins per Queue
+•Policy per Queue
+•Hierarchy Queue
+•Multi-cluster scheduling
+•Data affinity scheduling
+•Utilization optimization
+•Intelligent co-location
+•Efficient auto-scaling
+•Small Job Backfill
+•Performance 
+•Improve Throughput
+•Reduce Roundtrip
+2020.7
+202x.x
+
+--- PAGE 24 ---
+Resource
+•
+Website: https://volcano.sh/en/
+•
+Github: https://github.com/volcano-sh
+•
+Slack channel: https://volcano-sh.slack.com
+Join our community and give us feedback!

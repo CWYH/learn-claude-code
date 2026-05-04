@@ -1,0 +1,808 @@
+Intro & Deep dive
+Volcano: A Cloud Native Batch System
+
+Cloud Native for Intelligent Workload
+More and more organization are leveraging cloud native technology to avoid
+fragmental ecosystem, isolated stack, low resource utilization.
+
+HPC
+
+HPC
+
+• LSF
+• PBS
+• SGE
+
+• Hadoop 1.0
+• HDFS
+
+199*
+
+2006
+
+BigData
+
+HPC
+
+• Slurm
+
+• SGE/UGE
+
+2010
+
+2013
+
+BigData
+
+• Spark
+• Storm
+• Flink
+2014
+
+Cloud Native Batch System
+
+AI
+
+(HPC/BigData/AI)
+
+• kubeflow
+
+• Spark on k8s
+• Kube-batch
+
+• CERN@GKE
+• kbatch@GKE
+• Volcano
+
+2016
+
+2017
+
+2019
+
+• Gene@GKE
+
+• IDC: 云原生AI
+• EMR@EKS
+• K8s Batch WG
+
+2020
+
+2021
+
+Title
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Volcano Overview
+
+Volcano Federation
+
+Kubernetes
+
+Kubernetes
+
+Volcano-Controller
+
+Volcano-Controller
+
+Volcano-Scheduler
+
+Volcano-Scheduler
+
+kubectl
+
+Job
+
+Queue
+
+JobFlow
+
+Node
+
+NUMA
+GPU
+
+……
+
+Volcano-Scheduler
+
+Kube-apiserver
+
+Node
+
+NUMA
+
+GPU
+
+•
+
+Created at March 2019; Sandbox
+at April 2020; Incubator at April
+2022
+
+•
+
+2.3k star，350+ contributors，
+latest version v1.5.1
+
+•
+
+50+ enterprises adopt Volcano in
+production environments.
+
+Volcano-Controller
+
+Volcano scheduler
+
+Volcano controller
+vsub
+
+Kubernetes
+
+……
+
+•
+•
+
+•
+•
+
+•
+•
+
+•
+
+Title
+•
+•
+•
+
+•
+•
+•
+•
+•
+
+•
+
+apiVersion: batch.volcano.sh/v1alpha1
+kind: Job
+metadata:
+name: mpi-job
+labels:
+"volcano.sh/job-type": "MPI"
+spec:
+# minimum number of pods need to be started
+minAvailable: 3
+schedulerName: volcano
+plugins:
+# job level ssh trust
+ssh: []
+# define network relevant info for running,
+# hosts, headless services etc.
+svc: []
+# restart who job if any pod get evicted
+policies:
+- event: PodEvicted
+action: RestartJob
+tasks:
+- replicas: 1
+name: mpimaster
+# Mark whole job completed when mpiexec completed
+policies:
+- event: TaskCompleted
+action: CompleteJob
+
+•
+•
+•
+
+Queue1
+
+Queue2
+QueueN
+
+guarantee
+
+•
+
+……
+
+Queue
+
+•
+capacity
+
+Queuer1 with
+weight=2
+
+Queuer2 with
+weight=1
+
+Cluster
+resources
+
+Queuer2 with
+weight=1
+
+Queuer1 with
+weight=2
+
+Submit job to Queue 2
+
+Cluster
+resourc
+es
+
+CPU
+
+CPU
+
+CPU
+
+CPU
+
+CPU
+
+CPU
+
+CPU
+
+CPU
+
+CPU
+
+CPU
+
+CPU
+
+CPU
+
+Queue2 is empty. Q1 can borrow resources from Queue2.
+
+Queue2 has workload, it will reclaim resources from Queue1.
+
+Title
+•
+•
+•
+
+Fair-share between job
+Namespace 1
+
+node 1
+user1
+
+Queue1
+user2
+
+weight:1
+
+node 2
+
+Fair-share between namespace
+
+Namespace 2
+user3
+
+big job-2
+
+small job-1
+
+node 3
+
+Job-3
+ns2
+
+Namespace 3
+user4
+
+ns3
+
+Job-4
+Job-5
+
+weight:2
+Job-3
+
+Job-4
+
+Job-5
+
+Running task
+
+user
+
+Queue2
+
+Scheduler
+
+Pending task
+
+Nodes
+
+•
+
+•
+
+•
+•
+
+•
+
+：
+•
+•
+•
+
+•
+•
+•
+
+•
+•
+•
+•
+•
+•
+•
+•
+
+•
+•
+
+•
+•
+•
+•
+•
+•
+•
+•
+
+Title
+•
+apiVersion: batch.volcano.sh/v1alpha1
+kind: Job
+metadata:
+name: test-job
+spec:
+minAvailable: 5 #min
+tasks:
+- replicas: 10 #max
+template:
+spec:
+containers:
+- image: train_script
+resources:
+nvidia.com/gpu: 1
+……
+
+•
+
+•
+
+Queue
+
+[min:5]
+Inference job-2
+
+minAvailable pod
+
+elastic pod
+
+[min:5, max: 10]
+
+[5:10]
+
+[5:10]
+
+job-1
+
+job-2
+
+Elastic training job-1
+
+Title
+•
+
+•
+
+PS
+
+worker
+
+volcano
+
+PS
+
+PS
+
+Task-topology scheduling
+
+Title
+•
+
+•
+
+•
+
+Big job1
+Minvailable: 4
+
+Small job2
+
+Small job3
+
+Small job4
+T1
+Submit big job job1
+Submit small job2
+
+T2
+Small job2 get running
+Submit small job3
+
+T3
+Small job3 get running
+Submit small job4
+
+apiVersion: batch.volcano.sh/v1alpha1
+kind: Job
+metadata:
+name: test-job
+annotations:
+sla-waiting-time:1h
+spec:
+minAvailable: 5
+tasks:
+- replicas: 5
+template:
+……
+
+Pod Group
+
+Queue
+
+- Schedule based on Pod Group
+
+- Introduce Queue
+
+- Minimal Resource reservation（CPU/MEM）
+
+- Multi-tenants
+
+- Job priority
+
+- Priority
+- Fair-share
+- Preempt
+
+- ……
+
+SPARK-36057: Support volcano/alternative schedulers
+
+：
+
+MicroService
+
+BigData Task
+
+Transcoding
+
+AI Task
+
+，
+
+•
+•
+
+Volcano
+
+，
+
+•
+
+K8s API Server
+Node2
+
+Node1
+Transcoding、AI
+
+：
+
+•
+
+BigData、AI、Web
+
+•
+•
+
+OBS
+
+•
+•
+
+Web
+
+tfjob
+
+ENI
+
+ENI
+
+SFS Turbo Cache
+
+Spark
+
+tfjob
+
+ENI
+
+，
+
+Web
+
+•
+ENI
+
+：
+
+ENI
+
+：
+
+Title
+
+master
+
+1
+
+etcd2集群
+
+Controllers
+Pods Controllers
+
+Kind Controllers
+
+Nodes Controllers
+
+…
+
+Nodes
+
+Multi-Schedulers
+
+KubeScheduler
+
+2
+
+•
+•
+
+Other OBJ
+
+1W nodes
+
+4
+P2P
+Agent
+
+Scaled node
+
+Pod
+
+Scaled node
+
+3
+
+Pod
+
+P2P
+Agent
+
+….
+
+Pod
+
+：
+•
+
+…
+Volcano
+
+Pods
+
+•
+
+•
+
+Kube APIServers
+
+etcd1集群
+
+，
+
+•
+
+Image repo
+(cache mirror)
+
+Infra service
+ECS/VPC/OBS/…
+
+P2P
+Agent
+
+•
+
+Node
+
+•
+
+Cloud network
+
+•
+
+•
+
+•
+
+，
+
+Title
+recommend
+service
+
+model
+
+•
+
+release
+characteristic
+cache
+
+model training
+
+Flink training
+data
+generator
+
+label
+computing
+
+model release
+
+online
+service
+
+•
+
+training data
+
+model training based on
+Volcano
+
+•
+•
+•
+
+•
+
+•
+
+•
+
+•
+
+•
+•
+
+：
+•
+
+•
+•
+
+：
+•
+
+•
+•
+
+：
+•
+•
+•
+
+Ref: https://www.cncf.io/blog/2021/03/26/how-ruitian-used-volcano-to-run-large-scale-offline-hpc-jobs/
+
+•
+
+•
+•
+•
+
+•
+•
+
+v1.0:
+•
+•
+
+•
+•
+•
+
+•
+•
+
+•
+•
+•
+•
+
+•
+•
+•
+
+•
+•
+
+•
+
+2021.9
+
+2020.7
+
+•
+
+2022.Q2
+
+2022.Q1
+•
+•
+
+•
+
+•
+•
+•
+•
+
+•
+
+202x.x
+
+•
+
+•
+
+•
+•
+
+•
+
+• Website: https://volcano.sh/en/
+• Github: https://github.com/volcano-sh
+
+• Slack channel: https://volcano-sh.slack.com
+
+Join our community and give us feedback!
+
+
